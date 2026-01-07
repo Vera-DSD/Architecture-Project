@@ -36,7 +36,7 @@ def load_clip_model():
 def img_to_embedding(img_path, model, preprocess):
     """Преобразует изображение в вектор"""
     try:
-        img = Image.open(img_path).convert('RGB')
+        img = Image.open(str(img_path)).convert('RGB')  # Исправлено: добавлен str()
         img_tensor = preprocess(img).unsqueeze(0)
         
         with torch.no_grad():
@@ -101,7 +101,9 @@ def load_embeddings():
     
     embeddings = np.load(EMBEDDINGS_FILE)
     paths = np.load(PATHS_FILE, allow_pickle=True)
-    return embeddings, paths
+    # Преобразуем все пути в строки при загрузке
+    paths_as_strings = [str(p) for p in paths]
+    return embeddings, paths_as_strings
 
 def get_image_embedding(image, model, preprocess, device):
     """Создает эмбеддинг для изображения (файл или загруженный)"""
@@ -109,7 +111,7 @@ def get_image_embedding(image, model, preprocess, device):
         if hasattr(image, 'read'):  # Загруженный файл
             img = Image.open(image).convert('RGB')
         else:  # Путь к файлу
-            img = Image.open(image).convert('RGB')
+            img = Image.open(str(image)).convert('RGB')  # Исправлено: добавлен str()
         
         img_input = preprocess(img).unsqueeze(0).to(device)
         with torch.no_grad():
@@ -147,7 +149,8 @@ def search_by_image(query_image, model, preprocess, device, embeddings, paths, t
     similarities = 1 - cdist(query_emb_2d, embeddings, 'cosine')[0]
     top_indices = np.argsort(similarities)[::-1][:top_k]
     
-    return [(paths[idx], similarities[idx]) for idx in top_indices]
+    # Исправлено: возвращаем пути как строки
+    return [(str(paths[idx]), similarities[idx]) for idx in top_indices]
 
 def search_by_text(query_text, model, device, embeddings, paths, top_k=TOP_K):
     """Поиск изображений по тексту"""
@@ -160,7 +163,8 @@ def search_by_text(query_text, model, device, embeddings, paths, top_k=TOP_K):
     similarities = (embeddings @ query_emb_2d.T).flatten()
     top_indices = np.argsort(similarities)[::-1][:top_k]
     
-    return [(paths[idx], similarities[idx]) for idx in top_indices]
+    # Исправлено: возвращаем пути как строки
+    return [(str(paths[idx]), similarities[idx]) for idx in top_indices]
 
 def zero_shot_classify(query_image, model, preprocess, device, class_descriptions=None):
     """Классификация без обучения"""
@@ -256,13 +260,13 @@ def main():
         # Примеры запросов
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("modern glass skyscraper", use_container_width=True):
+            if st.button("modern glass skyscraper", width='stretch'):  # Исправлено: use_container_width → width='stretch'
                 st.session_state.text_query = "modern glass skyscraper"
         with col2:
-            if st.button("classical building with columns", use_container_width=True):
+            if st.button("classical building with columns", width='stretch'):
                 st.session_state.text_query = "classical building with columns"
         with col3:
-            if st.button("gothic cathedral", use_container_width=True):
+            if st.button("gothic cathedral", width='stretch'):
                 st.session_state.text_query = "gothic cathedral"
         
         # Поле для ввода текста
@@ -289,8 +293,9 @@ def main():
                 for idx, (col, (path, score)) in enumerate(zip(cols, results)):
                     with col:
                         try:
+                            # path уже строка из-за исправления в search_by_text
                             img = Image.open(path).convert('RGB')
-                            st.image(img, use_container_width=True)
+                            st.image(img, width='stretch')  # Исправлено: use_container_width → width='stretch'
                             st.caption(f"**Сходство:** {score:.3f}")
                             st.caption(f"**Файл:** {os.path.basename(path)}")
                         except Exception as e:
@@ -316,7 +321,7 @@ def main():
             sample_indices = np.random.choice(len(paths), 4, replace=False)
             for col, idx in zip(sample_cols, sample_indices):
                 with col:
-                    if st.button(f"Пример {idx+1}", key=f"sample_{idx}", use_container_width=True):
+                    if st.button(f"Пример {idx+1}", key=f"sample_{idx}", width='stretch'):  # Исправлено
                         st.session_state.sample_image = paths[idx]
         
         # Используем загруженное или выбранное изображение
@@ -328,9 +333,9 @@ def main():
             with col1:
                 if hasattr(query_image, 'read'):
                     img = Image.open(query_image).convert('RGB')
-                    st.image(img, caption="Ваш запрос", use_container_width=True)
+                    st.image(img, caption="Ваш запрос", width='stretch')  # Исправлено
                 else:
-                    st.image(query_image, caption="Ваш запрос", use_container_width=True)
+                    st.image(query_image, caption="Ваш запрос", width='stretch')  # Исправлено
             
             with col2:
                 st.write("**Информация о запросе:**")
@@ -355,8 +360,9 @@ def main():
                                 path, score = results[i + col_idx]
                                 with cols[col_idx]:
                                     try:
+                                        # path уже строка из-за исправления в search_by_image
                                         img = Image.open(path).convert('RGB')
-                                        st.image(img, use_container_width=True)
+                                        st.image(img, width='stretch')  # Исправлено
                                         
                                         # Прогресс-бар для наглядности сходства
                                         st.progress(float(score))
@@ -400,7 +406,7 @@ def main():
             col1, col2 = st.columns([1, 2])
             with col1:
                 img = Image.open(uploaded_file).convert('RGB')
-                st.image(img, caption="Изображение для классификации", use_container_width=True)
+                st.image(img, caption="Изображение для классификации", width='stretch')  # Исправлено
             
             if st.button("Классифицировать", type="primary"):
                 with st.spinner("Анализируем стиль..."):
