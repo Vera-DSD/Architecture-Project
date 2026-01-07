@@ -36,7 +36,7 @@ def load_clip_model():
 def img_to_embedding(img_path, model, preprocess):
     """Преобразует изображение в вектор"""
     try:
-        img = Image.open(str(img_path)).convert('RGB')  # Исправлено: добавлен str()
+        img = Image.open(str(img_path)).convert('RGB')
         img_tensor = preprocess(img).unsqueeze(0)
         
         with torch.no_grad():
@@ -64,16 +64,15 @@ def create_database():
     
     # Создание эмбеддингов
     database_embeddings = []
-    valid_paths = []
+    valid_paths = []  # Это будет список обычных строк (str)
     progress_bar = st.progress(0)
     
     for i, img_path in enumerate(all_image_paths):
         emb = img_to_embedding(str(img_path), model, preprocess)
         if emb is not None:
             database_embeddings.append(emb)
-            valid_paths.append(str(img_path))
+            valid_paths.append(str(img_path))  # Обязательно как str
         
-        # Обновление прогресса
         if (i + 1) % 50 == 0 or (i + 1) == len(all_image_paths):
             progress_bar.progress((i + 1) / len(all_image_paths))
     
@@ -81,11 +80,11 @@ def create_database():
     if database_embeddings:
         embeddings_array = np.vstack(database_embeddings)
         np.save(EMBEDDINGS_FILE, embeddings_array)
-        np.save(PATHS_FILE, np.array(valid_paths))
+        np.save(PATHS_FILE, valid_paths)  # Сохраняем как список строк, НЕ np.array!
         
         st.success(f"✅ База создана: {embeddings_array.shape[0]} эмбеддингов")
         st.write(f"📏 Размерность: {embeddings_array.shape}")
-        return embeddings_array, np.array(valid_paths)
+        return embeddings_array, valid_paths
     else:
         st.error("Не удалось создать эмбеддинги")
         return None, None
@@ -100,10 +99,8 @@ def load_embeddings():
         return None, None
     
     embeddings = np.load(EMBEDDINGS_FILE)
-    paths = np.load(PATHS_FILE, allow_pickle=True)
-    # Преобразуем все пути в строки при загрузке
-    paths_as_strings = [str(p) for p in paths]
-    return embeddings, paths_as_strings
+    paths = np.load(PATHS_FILE, allow_pickle=True).tolist()  # Преобразуем в обычный список строк
+    return embeddings, paths
 
 def get_image_embedding(image, model, preprocess, device):
     """Создает эмбеддинг для изображения (файл или загруженный)"""
@@ -111,7 +108,7 @@ def get_image_embedding(image, model, preprocess, device):
         if hasattr(image, 'read'):  # Загруженный файл
             img = Image.open(image).convert('RGB')
         else:  # Путь к файлу
-            img = Image.open(str(image)).convert('RGB')  # Исправлено: добавлен str()
+            img = Image.open(str(image)).convert('RGB')
         
         img_input = preprocess(img).unsqueeze(0).to(device)
         with torch.no_grad():
@@ -142,15 +139,11 @@ def search_by_image(query_image, model, preprocess, device, embeddings, paths, t
     if query_emb is None:
         return []
     
-    # Преобразуем в 2D для cdist
     query_emb_2d = query_emb.reshape(1, -1)
-    
-    # Вычисляем сходство
     similarities = 1 - cdist(query_emb_2d, embeddings, 'cosine')[0]
     top_indices = np.argsort(similarities)[::-1][:top_k]
     
-    # Исправлено: возвращаем пути как строки
-    return [(str(paths[idx]), similarities[idx]) for idx in top_indices]
+    return [(paths[idx], similarities[idx]) for idx in top_indices]  # paths[idx] — уже str
 
 def search_by_text(query_text, model, device, embeddings, paths, top_k=TOP_K):
     """Поиск изображений по тексту"""
@@ -158,13 +151,11 @@ def search_by_text(query_text, model, device, embeddings, paths, top_k=TOP_K):
     if query_emb is None:
         return []
     
-    # Матричное умножение для косинусного сходства
     query_emb_2d = query_emb.reshape(1, -1)
     similarities = (embeddings @ query_emb_2d.T).flatten()
     top_indices = np.argsort(similarities)[::-1][:top_k]
     
-    # Исправлено: возвращаем пути как строки
-    return [(str(paths[idx]), similarities[idx]) for idx in top_indices]
+    return [(paths[idx], similarities[idx]) for idx in top_indices]  # paths[idx] — уже str
 
 def zero_shot_classify(query_image, model, preprocess, device, class_descriptions=None):
     """Классификация без обучения"""
@@ -186,19 +177,16 @@ def zero_shot_classify(query_image, model, preprocess, device, class_description
     if image_emb is None:
         return []
     
-    # Токенизация текста
     text_inputs = clip.tokenize(class_descriptions).to(device)
     
     with torch.no_grad():
         text_embeddings = model.encode_text(text_inputs)
         text_embeddings /= text_embeddings.norm(dim=-1, keepdim=True)
         
-        # Вычисляем сходство
         image_emb_2d = image_emb.reshape(1, -1)
         similarity = (100.0 * image_emb_2d @ text_embeddings.T)
         probs = similarity.softmax(dim=-1)
         
-        # Берем топ-5 классов
         values, indices = probs[0].topk(min(5, len(class_descriptions)))
     
     return [(class_descriptions[idx], val.item()) for val, idx in zip(values, indices)]
@@ -227,10 +215,9 @@ def main():
         st.divider()
         st.header("ℹ️ Информация")
         
-        # Показываем информацию о базе данных
         if os.path.exists(EMBEDDINGS_FILE):
             embeddings_info = np.load(EMBEDDINGS_FILE)
-            paths_info = np.load(PATHS_FILE, allow_pickle=True)
+            paths_info = np.load(PATHS_FILE, allow_pickle=True).tolist()
             st.write(f"**База данных:** {len(paths_info)} изображений")
             st.write(f"**Размерность эмбеддингов:** {embeddings_info.shape[1]}")
         else:
@@ -257,19 +244,17 @@ def main():
     elif mode == "🔍 Поиск по тексту":
         st.header("Поиск изображений по текстовому описанию")
         
-        # Примеры запросов
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("modern glass skyscraper", width='stretch'):  # Исправлено: use_container_width → width='stretch'
+            if st.button("modern glass skyscraper", use_container_width=True):
                 st.session_state.text_query = "modern glass skyscraper"
         with col2:
-            if st.button("classical building with columns", width='stretch'):
+            if st.button("classical building with columns", use_container_width=True):
                 st.session_state.text_query = "classical building with columns"
         with col3:
-            if st.button("gothic cathedral", width='stretch'):
+            if st.button("gothic cathedral", use_container_width=True):
                 st.session_state.text_query = "gothic cathedral"
         
-        # Поле для ввода текста
         text_query = st.text_input(
             "Введите описание архитектуры:",
             value=getattr(st.session_state, 'text_query', 'modern building'),
@@ -288,14 +273,12 @@ def main():
             if results:
                 st.success(f"Найдено {len(results)} изображений")
                 
-                # Отображение результатов в сетке
                 cols = st.columns(min(4, len(results)))
                 for idx, (col, (path, score)) in enumerate(zip(cols, results)):
                     with col:
                         try:
-                            # path уже строка из-за исправления в search_by_text
                             img = Image.open(path).convert('RGB')
-                            st.image(img, width='stretch')  # Исправлено: use_container_width → width='stretch'
+                            st.image(img, use_container_width=True)
                             st.caption(f"**Сходство:** {score:.3f}")
                             st.caption(f"**Файл:** {os.path.basename(path)}")
                         except Exception as e:
@@ -306,14 +289,12 @@ def main():
     elif mode == "🖼️ Поиск по изображению":
         st.header("Поиск похожих изображений")
         
-        # Загрузка изображения
         uploaded_file = st.file_uploader(
             "Загрузите изображение для поиска",
             type=['jpg', 'jpeg', 'png'],
             help="Загрузите изображение архитектуры"
         )
         
-        # Примеры изображений
         st.write("Или выберите пример из базы:")
         embeddings, paths = load_embeddings()
         if embeddings is not None and len(paths) > 0:
@@ -321,21 +302,19 @@ def main():
             sample_indices = np.random.choice(len(paths), 4, replace=False)
             for col, idx in zip(sample_cols, sample_indices):
                 with col:
-                    if st.button(f"Пример {idx+1}", key=f"sample_{idx}", width='stretch'):  # Исправлено
+                    if st.button(f"Пример {idx+1}", key=f"sample_{idx}", use_container_width=True):
                         st.session_state.sample_image = paths[idx]
         
-        # Используем загруженное или выбранное изображение
         query_image = uploaded_file if uploaded_file else getattr(st.session_state, 'sample_image', None)
         
         if query_image:
-            # Показываем запрос
             col1, col2 = st.columns([1, 2])
             with col1:
                 if hasattr(query_image, 'read'):
                     img = Image.open(query_image).convert('RGB')
-                    st.image(img, caption="Ваш запрос", width='stretch')  # Исправлено
+                    st.image(img, caption="Ваш запрос", use_container_width=True)
                 else:
-                    st.image(query_image, caption="Ваш запрос", width='stretch')  # Исправлено
+                    st.image(query_image, caption="Ваш запрос", use_container_width=True)
             
             with col2:
                 st.write("**Информация о запросе:**")
@@ -352,7 +331,6 @@ def main():
                 if results:
                     st.subheader(f"🎯 Топ-{len(results)} похожих изображений:")
                     
-                    # Сетка результатов
                     for i in range(0, len(results), 4):
                         cols = st.columns(4)
                         for col_idx in range(4):
@@ -360,13 +338,9 @@ def main():
                                 path, score = results[i + col_idx]
                                 with cols[col_idx]:
                                     try:
-                                        # path уже строка из-за исправления в search_by_image
                                         img = Image.open(path).convert('RGB')
-                                        st.image(img, width='stretch')  # Исправлено
-                                        
-                                        # Прогресс-бар для наглядности сходства
+                                        st.image(img, use_container_width=True)
                                         st.progress(float(score))
-                                        
                                         st.caption(f"**Сходство:** {score:.3f}")
                                         st.caption(f"**{os.path.basename(path)}**")
                                     except Exception as e:
@@ -375,13 +349,11 @@ def main():
     elif mode == "🏷️ Классификация стиля":
         st.header("Определение архитектурного стиля")
         
-        # Загрузка изображения
         uploaded_file = st.file_uploader(
             "Загрузите изображение для классификации",
             type=['jpg', 'jpeg', 'png']
         )
         
-        # Настройка классов
         st.subheader("Настройка классов для классификации")
         
         default_classes = [
@@ -402,11 +374,10 @@ def main():
         class_list = [c.strip() for c in custom_classes.split('\n') if c.strip()]
         
         if uploaded_file and class_list:
-            # Показываем изображение
             col1, col2 = st.columns([1, 2])
             with col1:
                 img = Image.open(uploaded_file).convert('RGB')
-                st.image(img, caption="Изображение для классификации", width='stretch')  # Исправлено
+                st.image(img, caption="Изображение для классификации", use_container_width=True)
             
             if st.button("Классифицировать", type="primary"):
                 with st.spinner("Анализируем стиль..."):
@@ -415,7 +386,6 @@ def main():
                 if results:
                     st.subheader("📊 Результаты классификации:")
                     
-                    # Столбчатая диаграмма
                     classes = [r[0] for r in results]
                     scores = [r[1] for r in results]
                     
@@ -424,7 +394,6 @@ def main():
                     ax.set_xlabel('Вероятность')
                     ax.set_title('Вероятности архитектурных стилей')
                     
-                    # Добавляем значения на график
                     for bar, score in zip(bars, scores):
                         width = bar.get_width()
                         ax.text(width + 0.01, bar.get_y() + bar.get_height()/2,
@@ -432,12 +401,9 @@ def main():
                     
                     st.pyplot(fig)
                     
-                    # Таблица с результатами
                     st.subheader("📋 Детальные результаты:")
                     for i, (class_name, prob) in enumerate(results, 1):
                         st.write(f"{i}. **{class_name}** → {prob:.2%}")
-                        
-                        # Прогресс-бар для каждого класса
                         st.progress(float(prob))
 
 # ========== ЗАПУСК ПРИЛОЖЕНИЯ ==========
